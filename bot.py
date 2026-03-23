@@ -1,14 +1,18 @@
 """
-bot.py — Orquestador conversacional con Gemini 2.5 Pro + Function Calling nativo.
+bot.py — Orquestador conversacional con Gemini 2.0 Flash + Function Calling nativo.
+
+SDK: google-genai (nuevo) — NO google-generativeai (deprecado)
 
 Responsabilidades:
-  - Definir TOOLS_DEFINITION con las 6 function_declarations
-  - Crear sesión de chat con system prompt
+  - Definir TOOLS con types.Tool / types.FunctionDeclaration
+  - Crear sesión de chat con client.chats.create()
   - Implementar loop multi-tool que recolecta TODAS las fn_calls del turno
 """
 
 import os
-import google.generativeai as genai
+import time
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 
 from tools import (
@@ -18,7 +22,18 @@ from tools import (
 from context import SYSTEM_PROMPT
 
 load_dotenv()
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+# ---------------------------------------------------------------------------
+# MODELO — cambiar a "gemini-2.5-pro" cuando tengas billing activado
+# ---------------------------------------------------------------------------
+MODEL = "gemini-2.5-flash-lite"
+
+# ---------------------------------------------------------------------------
+# CLIENT — a nivel de módulo para que persista durante toda la vida del proceso
+# Si se crea dentro de create_session() como variable local, se destruye
+# al salir de la función y la sesión de chat queda sin cliente activo.
+# ---------------------------------------------------------------------------
+_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 # ---------------------------------------------------------------------------
 # TOOL ROUTER — mapea nombre de función → función real de tools.py
@@ -34,113 +49,112 @@ TOOL_ROUTER = {
 }
 
 # ---------------------------------------------------------------------------
-# TOOLS_DEFINITION — function_declarations para el SDK de Gemini
-# Copiado exactamente de la sección 5 del plan
+# TOOLS — function_declarations con types.Tool del nuevo SDK
 # ---------------------------------------------------------------------------
 
-TOOLS_DEFINITION = [
-    {
-        "function_declarations": [
-            {
-                "name": "top_zones",
-                "description": "Retorna las N zonas con mejor o peor desempeño en una métrica específica. Usar para preguntas de filtrado como '¿cuáles son las 5 peores zonas en Perfect Orders?'",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "metric":    {"type": "string", "description": "Nombre exacto de la métrica"},
-                        "n":         {"type": "integer", "description": "Número de zonas a retornar (default: 5)"},
-                        "country":   {"type": "string", "description": "Código de país (CO, MX, BR, etc.). Opcional."},
-                        "city":      {"type": "string", "description": "Nombre de ciudad. Opcional."},
-                        "ascending": {"type": "boolean", "description": "True para peores (menor valor), False para mejores (mayor valor)"},
-                        "week":      {"type": "string", "description": "Semana de referencia. Default: L0W_ROLL"},
-                    },
-                    "required": ["metric"],
+TOOLS = types.Tool(
+    function_declarations=[
+        types.FunctionDeclaration(
+            name="top_zones",
+            description="Retorna las N zonas con mejor o peor desempeño en una métrica específica. Usar para preguntas de filtrado como '¿cuáles son las 5 peores zonas en Perfect Orders?'",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "metric": types.Schema(type=types.Type.STRING, description="Nombre exacto de la métrica"),
+                    "n": types.Schema(type=types.Type.INTEGER, description="Número de zonas a retornar (default: 5)"),
+                    "country": types.Schema(type=types.Type.STRING, description="Código de país (CO, MX, BR, etc.). Opcional."),
+                    "city": types.Schema(type=types.Type.STRING, description="Nombre de ciudad. Opcional."),
+                    "ascending": types.Schema(type=types.Type.BOOLEAN, description="True para peores (menor valor), False para mejores (mayor valor)"),
+                    "week": types.Schema(type=types.Type.STRING, description="Semana de referencia. Default: L0W_ROLL"),
                 },
-            },
-            {
-                "name": "compare_segments",
-                "description": "Compara el valor promedio de una métrica entre segmentos (Wealthy vs Non Wealthy, países, etc.). Usar para preguntas de comparación.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "metric":  {"type": "string"},
-                        "segment": {"type": "string", "description": "ZONE_TYPE | ZONE_PRIORITIZATION | COUNTRY | CITY"},
-                        "country": {"type": "string", "description": "Filtrar por país. Opcional."},
-                        "week":    {"type": "string", "description": "Default: L0W_ROLL"},
-                    },
-                    "required": ["metric", "segment"],
+                required=["metric"],
+            ),
+        ),
+        types.FunctionDeclaration(
+            name="compare_segments",
+            description="Compara el valor promedio de una métrica entre segmentos (Wealthy vs Non Wealthy, países, etc.). Usar para preguntas de comparación.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "metric": types.Schema(type=types.Type.STRING, description="Nombre exacto de la métrica"),
+                    "segment": types.Schema(type=types.Type.STRING, description="ZONE_TYPE | ZONE_PRIORITIZATION | COUNTRY | CITY"),
+                    "country": types.Schema(type=types.Type.STRING, description="Filtrar por país. Opcional."),
+                    "week": types.Schema(type=types.Type.STRING, description="Default: L0W_ROLL"),
                 },
-            },
-            {
-                "name": "trend_analysis",
-                "description": "Muestra la evolución semana a semana de una métrica para una zona, ciudad o país. Usar para preguntas de tendencia temporal.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "metric":  {"type": "string"},
-                        "zone":    {"type": "string", "description": "Nombre de zona. Opcional."},
-                        "country": {"type": "string", "description": "Código de país. Opcional."},
-                        "city":    {"type": "string", "description": "Nombre de ciudad. Opcional."},
-                        "weeks":   {"type": "integer", "description": "Últimas N semanas (max 9). Default: 8"},
-                    },
-                    "required": ["metric"],
+                required=["metric", "segment"],
+            ),
+        ),
+        types.FunctionDeclaration(
+            name="trend_analysis",
+            description="Muestra la evolución semana a semana de una métrica para una zona, ciudad o país. Usar para preguntas de tendencia temporal.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "metric": types.Schema(type=types.Type.STRING, description="Nombre exacto de la métrica"),
+                    "zone": types.Schema(type=types.Type.STRING, description="Nombre de zona. Opcional."),
+                    "country": types.Schema(type=types.Type.STRING, description="Código de país. Opcional."),
+                    "city": types.Schema(type=types.Type.STRING, description="Nombre de ciudad. Opcional."),
+                    "weeks": types.Schema(type=types.Type.INTEGER, description="Últimas N semanas (max 9). Default: 8"),
                 },
-            },
-            {
-                "name": "find_zones",
-                "description": "Encuentra zonas que simultáneamente tienen métricas altas Y/O bajas. Usar para análisis multivariable como 'alto Lead Penetration pero bajo Perfect Order'.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "high_metrics":    {"type": "array", "items": {"type": "string"}, "description": "Métricas donde la zona debe estar en el cuartil alto"},
-                        "low_metrics":     {"type": "array", "items": {"type": "string"}, "description": "Métricas donde la zona debe estar en el cuartil bajo"},
-                        "country":         {"type": "string", "description": "Opcional"},
-                        "threshold_pct":   {"type": "number", "description": "Percentil para definir alto/bajo (default: 0.75)"},
-                    },
+                required=["metric"],
+            ),
+        ),
+        types.FunctionDeclaration(
+            name="find_zones",
+            description="Encuentra zonas que simultáneamente tienen métricas altas Y/O bajas. Usar para análisis multivariable como 'alto Lead Penetration pero bajo Perfect Order'.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "high_metrics": types.Schema(type=types.Type.ARRAY, items=types.Schema(type=types.Type.STRING), description="Métricas donde la zona debe estar en el cuartil alto"),
+                    "low_metrics": types.Schema(type=types.Type.ARRAY, items=types.Schema(type=types.Type.STRING), description="Métricas donde la zona debe estar en el cuartil bajo"),
+                    "country": types.Schema(type=types.Type.STRING, description="Opcional"),
+                    "threshold_pct": types.Schema(type=types.Type.NUMBER, description="Percentil para definir alto/bajo (default: 0.75)"),
                 },
-            },
-            {
-                "name": "aggregate_by",
-                "description": "Calcula el promedio de una métrica agrupado por país, ciudad, tipo de zona o priorización. Usar para preguntas de agregación como '¿cuál es el promedio por país?'",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "metric":   {"type": "string"},
-                        "group_by": {"type": "string", "description": "COUNTRY | CITY | ZONE_TYPE | ZONE_PRIORITIZATION"},
-                        "country":  {"type": "string", "description": "Opcional"},
-                        "week":     {"type": "string", "description": "Default: L0W_ROLL"},
-                    },
-                    "required": ["metric", "group_by"],
+            ),
+        ),
+        types.FunctionDeclaration(
+            name="aggregate_by",
+            description="Calcula el promedio de una métrica agrupado por país, ciudad, tipo de zona o priorización. Usar para preguntas de agregación como '¿cuál es el promedio por país?'",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "metric": types.Schema(type=types.Type.STRING, description="Nombre exacto de la métrica"),
+                    "group_by": types.Schema(type=types.Type.STRING, description="COUNTRY | CITY | ZONE_TYPE | ZONE_PRIORITIZATION"),
+                    "country": types.Schema(type=types.Type.STRING, description="Opcional"),
+                    "week": types.Schema(type=types.Type.STRING, description="Default: L0W_ROLL"),
                 },
-            },
-            {
-                "name": "explain_growth",
-                "description": "Identifica las zonas con mayor crecimiento en órdenes y retorna sus métricas operacionales para que el LLM pueda inferir qué explica el crecimiento.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "country": {"type": "string", "description": "Opcional"},
-                        "top_n":   {"type": "integer", "description": "Cuántas zonas top retornar. Default: 5"},
-                        "weeks":   {"type": "integer", "description": "Ventana de semanas para calcular crecimiento. Default: 5"},
-                    },
+                required=["metric", "group_by"],
+            ),
+        ),
+        types.FunctionDeclaration(
+            name="explain_growth",
+            description="Identifica las zonas con mayor crecimiento en órdenes y retorna sus métricas operacionales para que el LLM pueda inferir qué explica el crecimiento.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "country": types.Schema(type=types.Type.STRING, description="Opcional"),
+                    "top_n": types.Schema(type=types.Type.INTEGER, description="Cuántas zonas top retornar. Default: 5"),
+                    "weeks": types.Schema(type=types.Type.INTEGER, description="Ventana de semanas para calcular crecimiento. Default: 5"),
                 },
-            },
-        ]
-    }
-]
+            ),
+        ),
+    ]
+)
 
 # ---------------------------------------------------------------------------
 # SESIÓN DE CHAT
 # ---------------------------------------------------------------------------
 
 def create_session():
-    """Crea un modelo + sesión de chat con tools y system prompt."""
-    model = genai.GenerativeModel(
-        model_name="gemini-2.5-pro",
-        tools=TOOLS_DEFINITION,
-        system_instruction=SYSTEM_PROMPT,
+    """Crea una sesión de chat usando el client a nivel de módulo."""
+    session = _client.chats.create(
+        model=MODEL,
+        config=types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+            tools=[TOOLS],
+        ),
     )
-    return model.start_chat()
+    return session
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +168,20 @@ def chat(user_message: str, chat_session) -> tuple[str, list[str]]:
     Retorna (respuesta_texto, lista_de_tools_usadas).
     La lista permite a app.py mostrar debug info y decidir gráficos.
     """
-    response = chat_session.send_message(user_message)
+    # Retry hasta 3 veces con espera entre intentos
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = chat_session.send_message(user_message)
+            break
+        except Exception as e:
+            if "503" in str(e) and attempt < max_retries - 1:
+                wait = (attempt + 1) * 10  # 10s, 20s, 30s
+                print(f"⚠️  Servidor ocupado, reintentando en {wait}s...")
+                time.sleep(wait)
+            else:
+                raise
+
     tools_used = []
 
     # Loop: recolectar y ejecutar TODAS las tool calls del turno
@@ -162,36 +189,32 @@ def chat(user_message: str, chat_session) -> tuple[str, list[str]]:
         fn_calls = [
             part.function_call
             for part in response.candidates[0].content.parts
-            if hasattr(part, "function_call") and part.function_call.name
+            if hasattr(part, "function_call") and part.function_call is not None
         ]
 
         if not fn_calls:
             break
 
-        # Ejecutar TODAS y devolver todas las respuestas en un solo Content
+        # Ejecutar TODAS y devolver todas las respuestas en un solo mensaje
         response_parts = []
-        for fn_call in fn_calls:
-            tools_used.append(fn_call.name)
+        for fc in fn_calls:
+            tools_used.append(fc.name)
             try:
-                fn = TOOL_ROUTER[fn_call.name]
-                params = dict(fn_call.args)
-                result_df = fn(**params)
+                result_df = TOOL_ROUTER[fc.name](**dict(fc.args))
                 result_str = safe_result(result_df)
             except Exception as e:
-                result_str = f"Error ejecutando {fn_call.name}: {str(e)}"
+                result_str = f"Error ejecutando {fc.name}: {str(e)}"
 
             response_parts.append(
-                genai.protos.Part(
-                    function_response=genai.protos.FunctionResponse(
-                        name=fn_call.name,
+                types.Part(
+                    function_response=types.FunctionResponse(
+                        name=fc.name,
                         response={"result": result_str},
                     )
                 )
             )
 
-        response = chat_session.send_message(
-            genai.protos.Content(parts=response_parts)
-        )
+        response = chat_session.send_message(response_parts)
 
     return response.text, tools_used
 
@@ -215,7 +238,8 @@ if __name__ == "__main__":
     # Crear sesión
     session = create_session()
     print(f"\n{SEP}")
-    print("Sesión creada. Testeando 3 preguntas...")
+    print(f"Sesión creada con modelo: {MODEL}")
+    print("Testeando 3 preguntas...")
     print(SEP)
 
     test_questions = [

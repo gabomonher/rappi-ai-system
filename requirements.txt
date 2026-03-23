@@ -2,5 +2,5 @@ streamlit
 pandas
 python-dotenv
 openpyxl
-google-generativeai
+google-genai
 tabulate

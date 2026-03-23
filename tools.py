@@ -41,9 +41,24 @@ WEEK_LABEL_MAP = {
     "L2W_ROLL": "Sem -2", "L1W_ROLL": "Sem -1", "L0W_ROLL": "Sem 0",
 }
 
+COUNTRY_MAP = {
+    "MEXICO": "MX", "MÉXICO": "MX",
+    "COLOMBIA": "CO", "BRASIL": "BR", "BRAZIL": "BR",
+    "ARGENTINA": "AR", "CHILE": "CL",
+    "PERU": "PE", "PERÚ": "PE",
+    "ECUADOR": "EC", "COSTA RICA": "CR", "URUGUAY": "UY",
+}
+
 # ---------------------------------------------------------------------------
 # HELPERS
 # ---------------------------------------------------------------------------
+
+def normalize_country(country: str) -> str:
+    """Normaliza nombre de país a código de 2 letras (ej. 'México' → 'MX')."""
+    if not country:
+        return country
+    c = country.upper().strip()
+    return COUNTRY_MAP.get(c, c)
 
 def fuzzy_match_metric(metric: str) -> str | None:
     """Corrige typos del LLM usando fuzzy matching. Retorna None si no hay match."""
@@ -82,7 +97,7 @@ def top_zones(
     try:
         df = df_metrics[df_metrics["METRIC"] == metric].copy()
         if country:
-            df = df[df["COUNTRY"] == country.upper()]
+            df = df[df["COUNTRY"] == normalize_country(country)]
         if city:
             df = df[df["CITY"] == city.title()]
 
@@ -119,7 +134,7 @@ def compare_segments(
 
         df = df_metrics[df_metrics["METRIC"] == metric].copy()
         if country:
-            df = df[df["COUNTRY"] == country.upper()]
+            df = df[df["COUNTRY"] == normalize_country(country)]
 
         df = df.dropna(subset=[week])
 
@@ -159,15 +174,19 @@ def trend_analysis(
         if zone:
             df = df[df["ZONE"] == zone.title()]
         if country:
-            df = df[df["COUNTRY"] == country.upper()]
+            df = df[df["COUNTRY"] == normalize_country(country)]
         if city:
             df = df[df["CITY"] == city.title()]
 
         if df.empty:
             return _error_df(f"Sin datos para {metric} con los filtros aplicados.")
 
-        # Promedio grupal por semana (si no hay zona específica o si hay filtro)
-        result = df.groupby("week")["value"].mean().reset_index()
+        # Zona específica vs promedio grupal
+        if zone:
+            result = df[["week", "value"]].copy()
+            result = result.groupby("week")["value"].mean().reset_index()  # por si hay duplicados residuales
+        else:
+            result = df.groupby("week")["value"].mean().reset_index()
 
         # Mantener solo las últimas `weeks` semanas en orden cronológico
         week_order = WEEK_COLS  # L8W_ROLL (más vieja) → L0W_ROLL (más reciente)
@@ -221,7 +240,7 @@ def find_zones(
 
         df = df_metrics[df_metrics["METRIC"].isin(all_metrics)].copy()
         if country:
-            df = df[df["COUNTRY"] == country.upper()]
+            df = df[df["COUNTRY"] == normalize_country(country)]
 
         pivot = df.pivot_table(
             index=["COUNTRY", "CITY", "ZONE"],
@@ -292,7 +311,7 @@ def aggregate_by(
 
         df = df_metrics[df_metrics["METRIC"] == metric].copy()
         if country:
-            df = df[df["COUNTRY"] == country.upper()]
+            df = df[df["COUNTRY"] == normalize_country(country)]
 
         df = df.dropna(subset=[week])
 
@@ -330,7 +349,7 @@ def explain_growth(
         # Filtrar órdenes con datos válidos en ambas puntas
         df_o = df_orders.dropna(subset=[start_week, "L0W_ROLL"]).copy()
         if country:
-            df_o = df_o[df_o["COUNTRY"] == country.upper()]
+            df_o = df_o[df_o["COUNTRY"] == normalize_country(country)]
 
         if df_o.empty:
             return _error_df("Sin datos de órdenes para calcular crecimiento.")
@@ -358,13 +377,13 @@ def explain_growth(
         result = top.merge(metrics_pivot, on=["COUNTRY", "CITY", "ZONE"], how="left")
 
         # Eliminar zonas sin métricas (226 zonas en orders no tienen métricas — EDA)
-        result = result.dropna(thresh=3)
+        metric_cols = [c for c in result.columns if c not in ["COUNTRY", "CITY", "ZONE", "orders_growth_pct"]]
+        result = result.dropna(subset=metric_cols, thresh=max(1, len(metric_cols) // 2))
 
         if result.empty:
             return _error_df("Las zonas con mayor crecimiento no tienen métricas disponibles.")
 
-        # Redondear columnas de métricas
-        metric_cols = [c for c in result.columns if c not in ["COUNTRY", "CITY", "ZONE", "orders_growth_pct"]]
+        # Redondear columnas de métricas (reutiliza metric_cols definido arriba)
         for col in metric_cols:
             result[col] = result[col].round(4)
 
@@ -382,15 +401,12 @@ if __name__ == "__main__":
 
     # Inyectar DataFrames como globals
     _df_m, _df_o, _df_l = load_data("data/rappi_data.xlsx")
-    df_metrics = _df_m
-    df_orders = _df_o
-    df_long = _df_l
 
-    # Necesario para que las funciones vean los globals actualizados
-    import tools
-    tools.df_metrics = df_metrics
-    tools.df_orders = df_orders
-    tools.df_long = df_long
+    # Inyectar en el módulo (NO como variables locales)
+    import tools as _self
+    _self.df_metrics = _df_m
+    _self.df_orders  = _df_o
+    _self.df_long    = _df_l
 
     SEP = "=" * 60
 
@@ -407,13 +423,13 @@ if __name__ == "__main__":
     # Test 1: top_zones con nombre correcto
     r1 = run_test(
         "top_zones('Perfect Orders', country='CO', n=5)",
-        tools.top_zones, "Perfect Orders", n=5, country="CO",
+        _self.top_zones, "Perfect Orders", n=5, country="CO",
     )
 
     # Test 2: top_zones con typo — fuzzy match debe funcionar
     r2 = run_test(
         "top_zones('perfect orders', country='CO', n=5)  ← TYPO",
-        tools.top_zones, "perfect orders", n=5, country="CO",
+        _self.top_zones, "perfect orders", n=5, country="CO",
     )
 
     # Verificar que fuzzy match produce el mismo resultado
@@ -426,13 +442,13 @@ if __name__ == "__main__":
     # Test 3: compare_segments
     run_test(
         "compare_segments('Lead Penetration', 'ZONE_TYPE', country='MX')",
-        tools.compare_segments, "Lead Penetration", "ZONE_TYPE", country="MX",
+        _self.compare_segments, "Lead Penetration", "ZONE_TYPE", country="MX",
     )
 
     # Test 4: trend_analysis
     r4 = run_test(
         "trend_analysis('Gross Profit UE', country='BR', weeks=8)",
-        tools.trend_analysis, "Gross Profit UE", country="BR", weeks=8,
+        _self.trend_analysis, "Gross Profit UE", country="BR", weeks=8,
     )
     if "week_label" in r4.columns:
         print("✅ Columna week_label presente")
@@ -442,7 +458,7 @@ if __name__ == "__main__":
     # Test 5: find_zones multivariable
     run_test(
         "find_zones(high=['Lead Penetration'], low=['Perfect Orders'], country='AR')",
-        tools.find_zones,
+        _self.find_zones,
         high_metrics=["Lead Penetration"],
         low_metrics=["Perfect Orders"],
         country="AR",
@@ -451,13 +467,13 @@ if __name__ == "__main__":
     # Test 6: aggregate_by
     r6 = run_test(
         "aggregate_by('Turbo Adoption', group_by='COUNTRY')",
-        tools.aggregate_by, "Turbo Adoption", group_by="COUNTRY",
+        _self.aggregate_by, "Turbo Adoption", group_by="COUNTRY",
     )
 
     # Test 7: explain_growth
     r7 = run_test(
         "explain_growth(top_n=5, weeks=5)",
-        tools.explain_growth, top_n=5, weeks=5,
+        _self.explain_growth, top_n=5, weeks=5,
     )
     # Verificar que no hay zonas con todo NaN en métricas
     if "error" not in r7.columns:
