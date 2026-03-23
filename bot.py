@@ -166,7 +166,7 @@ def chat(user_message: str, chat_session) -> tuple[str, list[str]]:
     Envía un mensaje y procesa el loop multi-tool completo.
 
     Retorna (respuesta_texto, lista_de_tools_usadas).
-    La lista permite a app.py mostrar debug info y decidir gráficos.
+    La lista permite a app.py mostrar debug info y renderizar gráficos.
     """
     # Retry hasta 3 veces con espera entre intentos
     max_retries = 3
@@ -198,11 +198,16 @@ def chat(user_message: str, chat_session) -> tuple[str, list[str]]:
         # Ejecutar TODAS y devolver todas las respuestas en un solo mensaje
         response_parts = []
         for fc in fn_calls:
-            tools_used.append(fc.name)
             try:
                 result_df = TOOL_ROUTER[fc.name](**dict(fc.args))
+                tools_used.append({
+                    "name": fc.name,
+                    "df": result_df,
+                    "args": dict(fc.args)
+                })
                 result_str = safe_result(result_df)
             except Exception as e:
+                tools_used.append({"name": fc.name, "error": str(e)})
                 result_str = f"Error ejecutando {fc.name}: {str(e)}"
 
             response_parts.append(
@@ -255,7 +260,8 @@ if __name__ == "__main__":
 
         try:
             answer, tools_used = chat(question, session)
-            print(f"\n🔧 Tools usadas: {tools_used}")
+            nombres = [t.get("name", str(t)) if isinstance(t, dict) else t for t in tools_used]
+            print(f"\n🔧 Tools usadas: {nombres}")
             print(f"\n📝 Respuesta:\n{answer[:500]}...")
         except Exception as e:
             print(f"\n❌ Error: {str(e)}")

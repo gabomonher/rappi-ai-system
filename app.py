@@ -106,11 +106,32 @@ with tab1:
             st.markdown(message["content"])
             if "tools" in message and message["tools"]:
                 tools_list = message["tools"]
-                if "fallback" in tools_list:
+                tool_names = [t.get("name", str(t)) if isinstance(t, dict) else t for t in tools_list]
+                
+                if "fallback" in tool_names:
                     st.warning("⚠️ Respuesta offline pre-generada.")
                 else:
-                    with st.expander(f"🔧 Debug — herramientas usadas: {tools_list}"):
+                    with st.expander(f"🔧 Debug — herramientas usadas: {tool_names}"):
                         st.caption("✅ Datos extraídos directamente de la base Pandas/Excel, NO son alucinaciones del LLM.")
+                        
+                    # Dibujar gráficos extra si hay DFs disponibles
+                    for t in tools_list:
+                        if isinstance(t, dict) and t.get("df") is not None and not t["df"].empty:
+                            if "error" in t["df"].columns: continue # Saltar si hubo error
+                            
+                            if t["name"] == "trend_analysis":
+                                from visualizer import create_trend_chart
+                                metric = t["args"].get("metric", "Métrica")
+                                label = t["args"].get("zone") or t["args"].get("city") or t["args"].get("country") or "Global"
+                                fig = create_trend_chart(t["df"], metric, label)
+                                st.plotly_chart(fig, use_container_width=True)
+                            
+                            elif t["name"] == "compare_segments":
+                                from visualizer import create_bar_chart
+                                metric = t["args"].get("metric", "Métrica")
+                                group_col = t["args"].get("segment", "Segmento")
+                                fig = create_bar_chart(t["df"], metric, group_col)
+                                st.plotly_chart(fig, use_container_width=True)
     
     # Input de chat
     if prompt := st.chat_input("Pregúntame sobre las métricas de las zonas..."):
@@ -134,11 +155,33 @@ with tab1:
                 
                 if respuesta:
                     st.markdown(respuesta)
-                    if "fallback" in tools_used:
-                        st.warning("⚠️ Respuesta offline pre-generada.")
-                    elif tools_used:
-                        with st.expander(f"🔧 Debug — herramientas usadas: {tools_used}"):
-                            st.caption("✅ Datos extraídos directamente de la base Pandas/Excel, NO son alucinaciones del LLM.")
+                    
+                    if tools_used:
+                        tool_names = [t.get("name", str(t)) if isinstance(t, dict) else t for t in tools_used]
+                        if "fallback" in tool_names:
+                            st.warning("⚠️ Respuesta offline pre-generada.")
+                        else:
+                            with st.expander(f"🔧 Debug — herramientas usadas: {tool_names}"):
+                                st.caption("✅ Datos extraídos directamente de la base Pandas/Excel, NO son alucinaciones del LLM.")
+                            
+                            # Render charts immediately after receiving if applicable
+                            for t in tools_used:
+                                if isinstance(t, dict) and t.get("df") is not None and not t["df"].empty:
+                                    if "error" in t["df"].columns: continue
+                                    
+                                    if t["name"] == "trend_analysis":
+                                        from visualizer import create_trend_chart
+                                        metric = t["args"].get("metric", "Métrica")
+                                        label = t["args"].get("zone") or t["args"].get("city") or t["args"].get("country") or "Global"
+                                        fig = create_trend_chart(t["df"], metric, label)
+                                        st.plotly_chart(fig, use_container_width=True)
+                                    
+                                    elif t["name"] == "compare_segments":
+                                        from visualizer import create_bar_chart
+                                        metric = t["args"].get("metric", "Métrica")
+                                        group_col = t["args"].get("segment", "Segmento")
+                                        fig = create_bar_chart(t["df"], metric, group_col)
+                                        st.plotly_chart(fig, use_container_width=True)
                     
                     st.session_state.messages.append({
                         "role": "assistant", 
