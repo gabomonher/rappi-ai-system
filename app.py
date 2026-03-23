@@ -1,6 +1,8 @@
 import json
 import streamlit as st
 from dotenv import load_dotenv
+from visualizer import create_trend_chart, create_bar_chart
+from data_context import set_context, get_context
 
 load_dotenv()
 
@@ -19,11 +21,7 @@ def get_data():
 
 try:
     df_metrics, df_orders, df_long = get_data()
-    # Inyectar en tools como globals
-    import tools
-    tools.df_metrics = df_metrics
-    tools.df_orders = df_orders
-    tools.df_long = df_long
+    set_context(df_metrics, df_orders, df_long)
 except Exception as e:
     st.error(f"Error cargando los datos: {e}")
     st.stop()
@@ -54,7 +52,7 @@ def chat_with_fallback(user_message: str, chat_session) -> tuple[str, list[str]]
     """Intenta usar la API real de Gemini, si falla usa el JSON de fallback."""
     try:
         from bot import chat
-        return chat(user_message, chat_session)
+        return chat(user_message, chat_session, retry_callback=st.warning)
     except Exception as e:
         try:
             with open("demo_fallback.json", "r", encoding="utf-8") as f:
@@ -70,6 +68,30 @@ def chat_with_fallback(user_message: str, chat_session) -> tuple[str, list[str]]
         st.error(f"Error de conexión: {str(e)}")
         return "", []
 
+
+# ---------------------------------------------------------------------------
+# HELPER — renderizar gráficos para una lista de tools usadas
+# ---------------------------------------------------------------------------
+def render_tool_charts(tools_list: list) -> None:
+    """Dibuja gráficos Plotly si las tools retornaron DataFrames relevantes."""
+    for t in tools_list:
+        if not isinstance(t, dict) or t.get("df") is None or t["df"].empty:
+            continue
+        if "error" in t["df"].columns:
+            continue
+
+        if t["name"] == "trend_analysis":
+            metric = t["args"].get("metric", "Métrica")
+            label = t["args"].get("zone") or t["args"].get("city") or t["args"].get("country") or "Global"
+            fig = create_trend_chart(t["df"], metric, label)
+            st.plotly_chart(fig, use_container_width=True)
+
+        elif t["name"] == "compare_segments":
+            metric = t["args"].get("metric", "Métrica")
+            group_col = t["args"].get("segment", "Segmento")
+            fig = create_bar_chart(t["df"], metric, group_col)
+            st.plotly_chart(fig, use_container_width=True)
+
 # ---------------------------------------------------------------------------
 # SIDEBAR
 # ---------------------------------------------------------------------------
@@ -81,9 +103,10 @@ with st.sidebar:
     
     if st.button("🗑️ Nueva conversación", use_container_width=True):
         st.session_state.messages = []
-        from bot import create_session
+        from bot import create_session, clear_cache
         try:
             st.session_state.chat_session = create_session()
+            clear_cache()
         except:
             pass
         st.rerun()
@@ -113,25 +136,7 @@ with tab1:
                 else:
                     with st.expander(f"🔧 Debug — herramientas usadas: {tool_names}"):
                         st.caption("✅ Datos extraídos directamente de la base Pandas/Excel, NO son alucinaciones del LLM.")
-                        
-                    # Dibujar gráficos extra si hay DFs disponibles
-                    for t in tools_list:
-                        if isinstance(t, dict) and t.get("df") is not None and not t["df"].empty:
-                            if "error" in t["df"].columns: continue # Saltar si hubo error
-                            
-                            if t["name"] == "trend_analysis":
-                                from visualizer import create_trend_chart
-                                metric = t["args"].get("metric", "Métrica")
-                                label = t["args"].get("zone") or t["args"].get("city") or t["args"].get("country") or "Global"
-                                fig = create_trend_chart(t["df"], metric, label)
-                                st.plotly_chart(fig, use_container_width=True)
-                            
-                            elif t["name"] == "compare_segments":
-                                from visualizer import create_bar_chart
-                                metric = t["args"].get("metric", "Métrica")
-                                group_col = t["args"].get("segment", "Segmento")
-                                fig = create_bar_chart(t["df"], metric, group_col)
-                                st.plotly_chart(fig, use_container_width=True)
+                    render_tool_charts(tools_list)
     
     # Input de chat
     if prompt := st.chat_input("Pregúntame sobre las métricas de las zonas..."):
@@ -163,25 +168,7 @@ with tab1:
                         else:
                             with st.expander(f"🔧 Debug — herramientas usadas: {tool_names}"):
                                 st.caption("✅ Datos extraídos directamente de la base Pandas/Excel, NO son alucinaciones del LLM.")
-                            
-                            # Render charts immediately after receiving if applicable
-                            for t in tools_used:
-                                if isinstance(t, dict) and t.get("df") is not None and not t["df"].empty:
-                                    if "error" in t["df"].columns: continue
-                                    
-                                    if t["name"] == "trend_analysis":
-                                        from visualizer import create_trend_chart
-                                        metric = t["args"].get("metric", "Métrica")
-                                        label = t["args"].get("zone") or t["args"].get("city") or t["args"].get("country") or "Global"
-                                        fig = create_trend_chart(t["df"], metric, label)
-                                        st.plotly_chart(fig, use_container_width=True)
-                                    
-                                    elif t["name"] == "compare_segments":
-                                        from visualizer import create_bar_chart
-                                        metric = t["args"].get("metric", "Métrica")
-                                        group_col = t["args"].get("segment", "Segmento")
-                                        fig = create_bar_chart(t["df"], metric, group_col)
-                                        st.plotly_chart(fig, use_container_width=True)
+                            render_tool_charts(tools_used)
                     
                     st.session_state.messages.append({
                         "role": "assistant", 
@@ -199,11 +186,11 @@ with tab2:
     if st.session_state.findings is None:
         with st.spinner("Calculando insights sobre la data actualizada..."):
             from insights_engine import run_all_insights
-            import tools
             
             try:
+                ctx = get_context()
                 st.session_state.findings = run_all_insights(
-                    tools.df_metrics, tools.df_long, tools.df_orders
+                    ctx.df_metrics, ctx.df_long, ctx.df_orders
                 )
             except Exception as e:
                 st.error(f"Error procesando insights: {e}")
@@ -244,13 +231,27 @@ with tab2:
             # Mostrar el reporte generado
             st.markdown(st.session_state.report)
             
-            # Botón de descarga
-            st.download_button(
-                label="📥 Descargar Reporte (Markdown)",
-                data=st.session_state.report,
-                file_name="reporte_insights.md",
-                mime="text/markdown"
-            )
+            # Botones de descarga: Markdown + PDF
+            col_dl1, col_dl2 = st.columns(2)
+            with col_dl1:
+                st.download_button(
+                    label="📥 Descargar Markdown",
+                    data=st.session_state.report,
+                    file_name="reporte_insights.md",
+                    mime="text/markdown"
+                )
+            with col_dl2:
+                try:
+                    from report_generator import generate_pdf
+                    pdf_bytes = generate_pdf(st.session_state.report)
+                    st.download_button(
+                        label="📄 Descargar PDF",
+                        data=pdf_bytes,
+                        file_name="reporte_insights.pdf",
+                        mime="application/pdf"
+                    )
+                except Exception as e:
+                    st.error(f"Error generando PDF: {e}")
             
             if st.button("🔄 Regenerar Reporte"):
                 st.session_state.report = None

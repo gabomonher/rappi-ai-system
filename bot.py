@@ -11,6 +11,8 @@ Responsabilidades:
 
 import os
 import time
+import hashlib
+import logging
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
@@ -47,6 +49,18 @@ TOOL_ROUTER = {
     "aggregate_by": aggregate_by,
     "explain_growth": explain_growth,
 }
+
+# ---------------------------------------------------------------------------
+# RESPONSE CACHE — evita llamadas duplicadas a la API con el mismo mensaje
+# ---------------------------------------------------------------------------
+_response_cache: dict[str, tuple[str, list]] = {}
+
+logger = logging.getLogger(__name__)
+
+
+def clear_cache() -> None:
+    """Limpia el caché de respuestas. Llamar al iniciar nueva conversación."""
+    _response_cache.clear()
 
 # ---------------------------------------------------------------------------
 # TOOLS — function_declarations con types.Tool del nuevo SDK
@@ -161,13 +175,23 @@ def create_session():
 # LOOP MULTI-TOOL
 # ---------------------------------------------------------------------------
 
-def chat(user_message: str, chat_session) -> tuple[str, list[str]]:
+def chat(user_message: str, chat_session, retry_callback=None) -> tuple[str, list[str]]:
     """
     Envía un mensaje y procesa el loop multi-tool completo.
 
     Retorna (respuesta_texto, lista_de_tools_usadas).
     La lista permite a app.py mostrar debug info y renderizar gráficos.
+
+    Args:
+        retry_callback: función opcional para mostrar reintentos en la UI
+                        (ej: st.warning). Si es None, usa logging.
     """
+    # Cache: si el mismo mensaje ya fue procesado, retornar respuesta anterior
+    cache_key = hashlib.sha256(user_message.encode()).hexdigest()
+    if cache_key in _response_cache:
+        logger.info("Cache hit para: %s", user_message[:50])
+        return _response_cache[cache_key]
+
     # Retry hasta 3 veces con espera entre intentos
     max_retries = 3
     for attempt in range(max_retries):
@@ -176,8 +200,12 @@ def chat(user_message: str, chat_session) -> tuple[str, list[str]]:
             break
         except Exception as e:
             if "503" in str(e) and attempt < max_retries - 1:
-                wait = (attempt + 1) * 10  # 10s, 20s, 30s
-                print(f"⚠️  Servidor ocupado, reintentando en {wait}s...")
+                wait = (attempt + 1) * 5  # 5s, 10s, 15s (más corto que antes)
+                msg = f"⚠️  Servidor ocupado, reintentando en {wait}s... (intento {attempt + 2}/{max_retries})"
+                if retry_callback:
+                    retry_callback(msg)
+                else:
+                    logger.warning(msg)
                 time.sleep(wait)
             else:
                 raise
@@ -221,7 +249,9 @@ def chat(user_message: str, chat_session) -> tuple[str, list[str]]:
 
         response = chat_session.send_message(response_parts)
 
-    return response.text, tools_used
+    result = (response.text, tools_used)
+    _response_cache[cache_key] = result
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -229,14 +259,12 @@ def chat(user_message: str, chat_session) -> tuple[str, list[str]]:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    import tools as tools_module
     from data_loader import load_data
+    from data_context import set_context
 
-    # Cargar e inyectar datos
+    # Cargar e inicializar contexto de datos
     df_metrics, df_orders, df_long = load_data("data/rappi_data.xlsx")
-    tools_module.df_metrics = df_metrics
-    tools_module.df_orders = df_orders
-    tools_module.df_long = df_long
+    set_context(df_metrics, df_orders, df_long)
 
     SEP = "=" * 60
 

@@ -3,13 +3,17 @@ report_generator.py — Agente sintetizador de texto (sin tools).
 
 Toma los hallazgos de insights_engine.py y redacta un reporte Markdown
 ejecutivo usando Gemini (una única llamada).
+Opcionalmente genera un PDF estilizado.
 """
 
 import os
+import io
 import json
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
+import markdown
+from fpdf import FPDF
 
 load_dotenv()
 
@@ -50,7 +54,7 @@ HALLAZGOS DETECTADOS:
 {formatted_data}
 
 ESTRUCTURA OBLIGATORIA DEL REPORTE:
-# 🚨 Reporte Semanal de Operaciones Rappi
+# Reporte Semanal de Operaciones Rappi
 
 ## Resumen Ejecutivo
 [Redacta 3 o 4 frases críticas sintetizando lo más importante de los hallazgos]
@@ -63,8 +67,13 @@ ESTRUCTURA OBLIGATORIA DEL REPORTE:
 
 [Repite para los top 5...]
 
-## ⚠️ Métricas a Vigilar Esta Semana
+## Métricas a Vigilar Esta Semana
 [Menciona 2 o 3 métricas o zonas que quedaron fuera del top 5 pero que muestran comportamiento preocupante o correlaciones interesantes según la data provista]
+
+REGLAS IMPORTANTES:
+- NO uses emojis en el reporte
+- Usa texto plano y profesional
+- Las tablas deben usar formato Markdown estándar
 """
 
     response = client.models.generate_content(
@@ -82,7 +91,73 @@ def save_report(report_text: str, path: str = "reporte_insights.md"):
     """Guarda el texto del reporte en un archivo Markdown."""
     with open(path, "w", encoding="utf-8") as f:
         f.write(report_text)
-    print(f"✅ Reporte guardado exitosamente en: {path}")
+    print(f"Reporte guardado exitosamente en: {path}")
+
+
+# ---------------------------------------------------------------------------
+# GENERACIÓN DE PDF ESTILIZADO CON fpdf2
+# ---------------------------------------------------------------------------
+
+class _RappiPDF(FPDF):
+    """PDF personalizado con header y footer branded de Rappi."""
+
+    def header(self):
+        # Barra roja superior
+        self.set_fill_color(252, 45, 26)  # #FC2D1A
+        self.rect(0, 0, self.w, 22, "F")
+        # Título en la barra
+        self.set_font("Helvetica", "B", 16)
+        self.set_text_color(255, 255, 255)
+        self.set_y(4)
+        self.cell(0, 10, "Rappi AI Analytics", align="C", new_x="LMARGIN", new_y="NEXT")
+        # Subtítulo
+        self.set_font("Helvetica", "", 8)
+        self.set_text_color(255, 230, 230)
+        self.cell(0, 5, f"Reporte generado automaticamente", align="C", new_x="LMARGIN", new_y="NEXT")
+        self.ln(6)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font("Helvetica", "I", 8)
+        self.set_text_color(150, 150, 150)
+        self.cell(0, 10, f"Pagina {self.page_no()}/{{nb}}", align="C")
+
+
+def generate_pdf(report_md: str) -> bytes:
+    """
+    Convierte el reporte Markdown a un PDF estilizado con branding Rappi.
+    Usa fpdf2 (100% Python, sin dependencias de sistema).
+    Retorna los bytes del PDF para usar con st.download_button.
+    """
+    # Limpiar emojis y caracteres problemáticos para fpdf2
+    import re
+    clean_md = re.sub(
+        r'[\U0001F600-\U0001F9FF\U0001FA00-\U0001FA6F\U0001FA70-\U0001FAFF'
+        r'\u2600-\u26FF\u2700-\u27BF\u2B50\u2B55\u231A\u23F0-\u23FF'
+        r'\u2934\u2935\u25AA\u25AB\u25FB-\u25FE\u2614\u2615'
+        r'\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF]',
+        '', report_md
+    )
+
+    # Markdown → HTML
+    html_body = markdown.markdown(
+        clean_md,
+        extensions=["tables", "fenced_code"],
+    )
+
+    # Crear PDF
+    pdf = _RappiPDF()
+    pdf.alias_nb_pages()
+    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.add_page()
+
+    # Escribir el contenido HTML convertido
+    pdf.set_font("Helvetica", "", 11)
+    pdf.set_text_color(51, 51, 51)
+    pdf.write_html(html_body)
+
+    # Retornar como bytes (fpdf2 retorna bytearray, Streamlit necesita bytes)
+    return bytes(pdf.output())
 
 # ---------------------------------------------------------------------------
 # BLOQUE MAIN (Prueba de integración)
