@@ -42,6 +42,17 @@ COUNTRY_MAP = {
     "ECUADOR": "EC", "COSTA RICA": "CR", "URUGUAY": "UY",
 }
 
+import operator
+# Mapa de operadores string a funciones reales de Python
+OPS = {
+    ">": operator.gt,
+    "<": operator.lt,
+    ">=": operator.ge,
+    "<=": operator.le,
+    "==": operator.eq,
+    "!=": operator.ne
+}
+
 # ---------------------------------------------------------------------------
 # HELPERS
 # ---------------------------------------------------------------------------
@@ -199,6 +210,88 @@ def trend_analysis(
         return result[["week", "week_label", "value", "pct_change_vs_prev"]].reset_index(drop=True)
     except Exception as e:
         return _error_df(f"Error en trend_analysis: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# FUNCIÓN 4 — filter_zones
+# ---------------------------------------------------------------------------
+
+def filter_zones(
+    metric: str,
+    op: str,
+    value: float,
+    country: str = None,
+    city: str = None,
+    prioritization: str = None,
+    zone_type: str = None,
+    week: str = "L0W_ROLL"
+) -> pd.DataFrame:
+    """Filtra zonas mediante condiciones estrictas (ej. Gross Profit UE < 0)."""
+    metric = fuzzy_match_metric(metric)
+    if not metric: return _error_df("Métrica no reconocida.")
+    if op not in OPS: return _error_df(f"Operador '{op}' inválido. Usa: >, <, >=, <=, ==, !=")
+
+    try:
+        ctx = get_context()
+        df = ctx.df_metrics[ctx.df_metrics["METRIC"] == metric].dropna(subset=[week])
+        
+        if country: df = df[df["COUNTRY"] == normalize_country(country)]
+        if city: df = df[df["CITY"] == city.title()]
+        if prioritization: df = df[df["ZONE_PRIORITIZATION"].str.lower() == prioritization.lower()]
+        if zone_type: df = df[df["ZONE_TYPE"].str.lower() == zone_type.lower()]
+
+        # Aplicar el filtro dinámico vectorizado
+        mask = OPS[op](df[week], float(value))
+        res = df[mask].copy()
+
+        if res.empty: return _error_df("Ninguna zona cumple con la condición.")
+        
+        res[week] = res[week].round(4)
+        return res[["COUNTRY", "CITY", "ZONE", "ZONE_TYPE", "ZONE_PRIORITIZATION", week]].reset_index(drop=True)
+    except Exception as e:
+        return _error_df(f"Error en filter_zones: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# FUNCIÓN 5 — find_anomalies
+# ---------------------------------------------------------------------------
+
+def find_anomalies(
+    metric: str,
+    threshold_pct: float = 0.10,
+    country: str = None,
+    current_week: str = "L0W_ROLL",
+    prev_week: str = "L1W_ROLL"
+) -> pd.DataFrame:
+    """Encuentra zonas con variaciones porcentuales drásticas (> threshold) semana contra semana."""
+    metric = fuzzy_match_metric(metric)
+    if not metric: return _error_df("Métrica no reconocida.")
+
+    try:
+        ctx = get_context()
+        df = ctx.df_metrics[ctx.df_metrics["METRIC"] == metric].dropna(subset=[current_week, prev_week]).copy()
+        if country: df = df[df["COUNTRY"] == normalize_country(country)]
+
+        # Deltas vectorizados, manejando división por cero en Pandas
+        # Usamos abs() en el denominador para respetar el signo de crecimiento si pasa de negativo a positivo
+        df["pct_change"] = (df[current_week] - df[prev_week]) / df[prev_week].abs().replace(0, pd.NA)
+        
+        mask_anomalies = df["pct_change"].abs() >= threshold_pct
+        res = df[mask_anomalies].copy()
+
+        if res.empty: return _error_df(f"No hay anomalías superiores al {threshold_pct*100}% detectadas.")
+
+        res["pct_change"] = res["pct_change"].astype(float).round(4)
+        res[current_week] = res[current_week].round(4)
+        res[prev_week] = res[prev_week].round(4)
+
+        # Ordenar por el mayor impacto absoluto
+        res["_abs_change"] = res["pct_change"].abs()
+        res = res.sort_values("_abs_change", ascending=False).drop(columns="_abs_change")
+
+        return res[["COUNTRY", "CITY", "ZONE", prev_week, current_week, "pct_change"]].reset_index(drop=True)
+    except Exception as e:
+        return _error_df(f"Error en find_anomalies: {str(e)}")
 
 
 # ---------------------------------------------------------------------------

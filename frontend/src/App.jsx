@@ -16,7 +16,13 @@ function App() {
   // Called when user clicks a Bento Card in Insights:
   // builds an analytical query and routes the user to the Chat tab.
   const handleAnalyzeCard = (finding) => {
-    const q = `Haz un análisis profundo de esta anomalía detectada:  \n**Métrica:** ${finding.metric}  \n**Zona:** ${finding.zone} (${finding.city}, ${finding.country})  \n**Tipo:** ${finding.type}  \n**Magnitud:** ${finding.magnitude}%  \n**Descripción:** ${finding.description}  \nExplica las causas, el impacto operacional y qué acciones específicas debería tomar el equipo de operaciones.`;
+    const q = `Anomalía detectada por el motor de insights:
+- Métrica: ${finding.metric}
+- Zona: ${finding.zone} (${finding.city}, ${finding.country})
+- Tipo: ${finding.type} | Magnitud: ${finding.magnitude}%
+- Descripción: ${finding.description}
+
+Usa tus herramientas para obtener el contexto de datos y haz un análisis profundo: causas, impacto operacional y acciones concretas para el equipo de Ops.`;
     setPendingQuery(q);
     setActiveTab('chat');
   };

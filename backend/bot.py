@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 from .tools import (
     top_zones, compare_segments, trend_analysis,
     find_zones, aggregate_by, explain_growth, safe_result,
+    filter_zones, find_anomalies
 )
 from .data_context import SYSTEM_PROMPT
 
@@ -28,7 +29,7 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 # MODELO — cambiar a "gemini-2.5-pro" cuando tengas billing activado
 # ---------------------------------------------------------------------------
-MODEL = "gemini-2.5-flash-lite"
+MODEL = "gemini-2.5-flash"
 
 # ---------------------------------------------------------------------------
 # CLIENT — a nivel de módulo para que persista durante toda la vida del proceso
@@ -48,6 +49,8 @@ TOOL_ROUTER = {
     "find_zones": find_zones,
     "aggregate_by": aggregate_by,
     "explain_growth": explain_growth,
+    "filter_zones": filter_zones,
+    "find_anomalies": find_anomalies,
 }
 
 # ---------------------------------------------------------------------------
@@ -150,6 +153,39 @@ TOOLS = types.Tool(
                     "top_n": types.Schema(type=types.Type.INTEGER, description="Cuántas zonas top retornar. Default: 5"),
                     "weeks": types.Schema(type=types.Type.INTEGER, description="Ventana de semanas para calcular crecimiento. Default: 5"),
                 },
+            ),
+        ),
+        types.FunctionDeclaration(
+            name="filter_zones",
+            description="Filtra zonas que cumplan una condición matemática estricta sobre una métrica (ej. Gross Profit > 0). Usar para preguntas de comparación directa como 'qué zonas tienen retención menor a 20%'.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "metric": types.Schema(type=types.Type.STRING, description="Nombre exacto de la métrica"),
+                    "op": types.Schema(type=types.Type.STRING, description="Operador lógico: >, <, >=, <=, ==, !="),
+                    "value": types.Schema(type=types.Type.NUMBER, description="Valor numérico a comparar"),
+                    "country": types.Schema(type=types.Type.STRING, description="Opcional"),
+                    "city": types.Schema(type=types.Type.STRING, description="Opcional"),
+                    "prioritization": types.Schema(type=types.Type.STRING, description="Opcional (P0, P1, P2, etc)"),
+                    "zone_type": types.Schema(type=types.Type.STRING, description="Opcional (Wealthy, Non Wealthy, etc)"),
+                    "week": types.Schema(type=types.Type.STRING, description="Default: L0W_ROLL"),
+                },
+                required=["metric", "op", "value"],
+            ),
+        ),
+        types.FunctionDeclaration(
+            name="find_anomalies",
+            description="Encuentra proactivamente zonas que sufrieron cambios porcentuales drásticos (positivos o negativos) en una métrica semana contra semana. Usar para preguntas como '¿hubo alguna caída drástica en ventas?'",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "metric": types.Schema(type=types.Type.STRING, description="Nombre exacto de la métrica"),
+                    "threshold_pct": types.Schema(type=types.Type.NUMBER, description="Umbral de detección mínimo en decimales. Ej: 0.10 para variaciones del 10%. (Default: 0.10)"),
+                    "country": types.Schema(type=types.Type.STRING, description="Opcional"),
+                    "current_week": types.Schema(type=types.Type.STRING, description="Default: L0W_ROLL"),
+                    "prev_week": types.Schema(type=types.Type.STRING, description="Default: L1W_ROLL"),
+                },
+                required=["metric"],
             ),
         ),
     ]
