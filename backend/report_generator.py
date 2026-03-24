@@ -18,7 +18,7 @@ from fpdf import FPDF
 load_dotenv()
 
 # Igual que en bot.py, usamos flash-lite/flash para dev, luego se puede subir a pro
-MODEL = "gemini-2.5-flash-lite"
+MODEL = "gemini-2.5-flash"
 
 def format_findings_for_llm(findings: list[dict]) -> str:
     """Convierte la lista de diccionarios a un formato de texto estructurado para el prompt."""
@@ -99,38 +99,38 @@ def save_report(report_text: str, path: str = "reporte_insights.md"):
 # ---------------------------------------------------------------------------
 
 class _RappiPDF(FPDF):
-    """PDF personalizado con header y footer branded de Rappi."""
+    """PDF personalizado con header y footer branded de Rappi en Dark Mode."""
 
     def header(self):
-        # Barra roja superior
-        self.set_fill_color(252, 45, 26)  # #FC2D1A
-        self.rect(0, 0, self.w, 22, "F")
-        # Título en la barra
-        self.set_font("Helvetica", "B", 16)
+        # 1. Barra naranja-coral superior (brand Rappi)
+        self.set_fill_color(250, 61, 34)  # #fa3d22
+        self.rect(0, 0, self.w, 24, "F")
+        
+        # 3. Títulos en la barra
+        self.set_font("Helvetica", "B", 18)
         self.set_text_color(255, 255, 255)
-        self.set_y(4)
-        self.cell(0, 10, "Rappi AI Analytics", align="C", new_x="LMARGIN", new_y="NEXT")
-        # Subtítulo
-        self.set_font("Helvetica", "", 8)
+        self.set_y(5)
+        self.cell(0, 8, "Rappi Ops Intelligence Hub", align="C", new_x="LMARGIN", new_y="NEXT")
+        
+        self.set_font("Helvetica", "I", 9)
         self.set_text_color(255, 230, 230)
-        self.cell(0, 5, f"Reporte generado automaticamente", align="C", new_x="LMARGIN", new_y="NEXT")
-        self.ln(6)
+        self.cell(0, 5, "Reporte Ejecutivo Automatizado con IA", align="C", new_x="LMARGIN", new_y="NEXT")
+        self.ln(10)
 
     def footer(self):
         self.set_y(-15)
         self.set_font("Helvetica", "I", 8)
-        self.set_text_color(150, 150, 150)
-        self.cell(0, 10, f"Pagina {self.page_no()}/{{nb}}", align="C")
+        self.set_text_color(120, 120, 120)
+        self.cell(0, 10, f"Rappi Confidential  |  Página {self.page_no()}/{{nb}}", align="C")
 
 
 def generate_pdf(report_md: str) -> bytes:
     """
-    Convierte el reporte Markdown a un PDF estilizado con branding Rappi.
-    Usa fpdf2 (100% Python, sin dependencias de sistema).
-    Retorna los bytes del PDF para usar con st.download_button.
+    Convierte el reporte Markdown a HTML y usa fpdf2 para generar un PDF
+    con un diseño Premium Dark Mode idéntico a la app web.
     """
-    # Limpiar emojis y caracteres problemáticos para fpdf2
     import re
+    # Limpiar emojis (fpdf2 sufre renderizándolos sin fuentes especiales)
     clean_md = re.sub(
         r'[\U0001F600-\U0001F9FF\U0001FA00-\U0001FA6F\U0001FA70-\U0001FAFF'
         r'\u2600-\u26FF\u2700-\u27BF\u2B50\u2B55\u231A\u23F0-\u23FF'
@@ -145,18 +145,36 @@ def generate_pdf(report_md: str) -> bytes:
         extensions=["tables", "fenced_code"],
     )
 
-    # Crear PDF
     pdf = _RappiPDF()
     pdf.alias_nb_pages()
     pdf.set_auto_page_break(auto=True, margin=20)
     pdf.add_page()
 
-    # Escribir el contenido HTML convertido
-    pdf.set_font("Helvetica", "", 11)
-    pdf.set_text_color(51, 51, 51)
-    pdf.write_html(html_body)
+    # Reemplazo manual de etiquetas HTML para inyectar colores Light Mode.
+    styled_html = html_body
+    
+    # Arreglar la ruta de la imagen generada dinámicamente:
+    # El LLM devuelve: ![Alt](/api/reports/images/file.png)
+    # Pero para que fpdf2 lo vea, la ruta debe ser local al servidor: 'reports/images/file.png'
+    # Así fpdf2 lee el binario real e imprime la foto.
+    styled_html = styled_html.replace('src="/api/', 'src="')
+    
+    styled_html = styled_html.replace("<h1>", '<h1 style="color: #fa3d22;">')
+    styled_html = styled_html.replace("<h2>", '<h2 style="color: #222222;">')
+    styled_html = styled_html.replace("<h3>", '<h3 style="color: #fa3d22;">')
+    styled_html = styled_html.replace("<strong>", '<b style="color: #000000;">')
+    styled_html = styled_html.replace("</strong>", '</b>')
+    styled_html = styled_html.replace("<table>", '<table width="100%" border="1" bordercolor="#cccccc">')
+    styled_html = styled_html.replace("<th>", '<th align="left" bgcolor="#fa3d22"><font color="#ffffff">')
+    styled_html = styled_html.replace("</th>", '</font></th>')
+    styled_html = styled_html.replace("<td>", '<td bgcolor="#ffffff"><font color="#333333">')
+    styled_html = styled_html.replace("</td>", '</font></td>')
 
-    # Retornar como bytes (fpdf2 retorna bytearray, Streamlit necesita bytes)
+    # Color de texto base para párrafos y listas (Gris oscuro)
+    pdf.set_text_color(51, 51, 51) 
+    pdf.set_font("Helvetica", "", 10)
+    pdf.write_html(styled_html)
+
     return bytes(pdf.output())
 
 # ---------------------------------------------------------------------------

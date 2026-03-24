@@ -1,93 +1,162 @@
-# 🛵 Rappi AI Analytics System
+# Rappi Ops Intelligence Hub
 
-*Un copiloto analítico conversacional para Operaciones de Rappi, impulsado por Gemini 2.5 y Function Calling determinista.*
-
----
-
-## 🚀 Resumen del Proyecto
-El **Rappi AI Analytics System** está diseñado para revolucionar la manera en que los Ops Managers y City Managers interactúan con la información. A través de una interfaz conversacional en lenguaje natural, permite analizar el desempeño operativo de las distintas zonas sin necesidad de escribir código o consultas SQL complejas.
-
-Para garantizar la integridad y precisión de los datos corporativos, el sistema utiliza inteligencia artificial **únicamente para orquestación semántica y generación de texto**, mientras que todos los cálculos matemáticos, filtrados y cruces de datos se ejecutan en Python (Pandas) bajo reglas estrictas de negocio. El resultado: **100% trazabilidad operativa y 0% de alucinaciones en las métricas.**
+> An end-to-end AI-powered analytics platform for Operations teams — featuring a conversational data analyst, an autonomous insight engine, AI-generated executive reports, and interactive Bento Card deep-dives.
 
 ---
 
-## 🛠️ Cómo Inicializar el Proyecto Localmente
+## Demo & Overview
 
-Para desplegar el sistema en un entorno de desarrollo local, sigue estos 4 sencillos pasos:
-
-1. **Clonar el repositorio y entrar al directorio:**
-   ```bash
-   git clone <repo-url>
-   cd rappi-ai-system
-   ```
-
-2. **Instalar las dependencias requeridas:**
-   Se recomienda usar un entorno virtual (`venv` o `conda`).
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Configurar las credenciales de entorno:**
-   Copia el archivo de ejemplo y agrega tu API Key de Google Gemini.
-   ```bash
-   cp .env.example .env
-   ```
-   *(Abre `.env` en tu editor principal y define `GEMINI_API_KEY="tu_clave_aqui"`, generada en Google AI Studio)*
-
-4. **Lanzar la aplicación interactiva:**
-   ```bash
-   streamlit run app.py
-   ```
-   La interfaz gráfica estará disponible en http://localhost:8501.
+| Feature | Description |
+|---|---|
+| 🤖 **AI Data Chat** | Ask operational questions in natural language. Gemini orchestrates deterministic Pandas tools to return real, traceable metrics. |
+| 📊 **Auto-Insights Feed** | Autonomous statistical engine detects anomalies, sustained declines, and growth opportunities across 1,129 zones — without LLM involvement. |
+| 📄 **AI Executive Reports** | One-click Markdown & PDF reports written by Gemini, with auto-generated trendline charts embedded. Saved with timestamps for historical access. |
+| 🔍 **Bento Card Deep-Dives** | Click any insight card to instantly route it to the Chat for a deep analytical conversation. |
 
 ---
 
-## 🏗️ Arquitectura de la Solución
+## Architecture
 
-El proyecto sigue una arquitectura modular y escalable en la cual cada archivo tiene una única responsabilidad claramente definida:
+This project follows a **decoupled client-server** architecture, separating AI/data logic from presentation:
 
-| Archivo | Responsabilidad Principal |
-|---------|---------------------------|
-| **`app.py`** | Controlador Front-End (Streamlit). Gestiona la interfaz del bot conversacional, estado de sesión y visualización de insights automáticos. |
-| **`bot.py`** | Orquestador de la Inteligencia Artificial. Maneja el loop *multi-tool* para ejecutar múltiples funciones en un solo turno usando el robusto SDK `google-genai`. |
-| **`tools.py`** | Colección de funciones analíticas deterministas de Pandas inyectadas como *tools* dentro de Gemini. Son el "cerebro lógico" de las respuestas. |
-| **`insights_engine.py`** | Motor estadístico offline capaz de detectar de forma autónoma anomalías, brechas e impacto sin intervención de LLMs. |
-| **`report_generator.py`** | Sintetizador de reportes ejecutivos. Toma resultados del `insights_engine` y redacta un entregable estructurado en Markdown legible por perfiles de management. |
-| **`context.py`** | Contiene el `SYSTEM_PROMPT` con el comportamiento corporativo y directrices exactas de nuestro analista conversacional. |
-| **`data_loader.py`** | Módulo de pre-procesamiento de datos. Se encarga de la limpieza de datos (deduplicación, imputación) garantizando la calidad antes de llegar al sistema. |
+```
+rappi-ai-system/
+├── backend/                   # Python package — all server-side logic
+│   ├── api.py                 # FastAPI REST API (entry point)
+│   ├── bot.py                 # Gemini multi-tool orchestration loop
+│   ├── tools.py               # Deterministic Pandas analytics functions (injected as Gemini tools)
+│   ├── insights_engine.py     # Autonomous statistical insight engine (IQR, Pearson, WoW growth)
+│   ├── report_generator.py    # AI executive report + PDF generation (fpdf2)
+│   ├── report_graphics.py     # Matplotlib trendline chart generation
+│   ├── data_loader.py         # Data cleaning & preprocessing pipeline
+│   └── data_context.py        # Global data singleton + system prompt
+├── frontend/                  # React + Vite application
+│   └── src/
+│       ├── App.jsx            # Root layout, tab routing, cross-component state
+│       ├── components/
+│       │   ├── Chat.jsx       # Conversational AI interface with Plotly chart rendering
+│       │   └── Insights.jsx   # Insights feed, report generator, report history
+├── data/                      # Source Excel dataset (gitignored)
+├── reports/                   # Generated reports + chart images (persisted locally)
+├── eda.py                     # Exploratory Data Analysis notebook-style script
+└── requirements.txt
+```
+
+### Key Design Decisions
+
+**1. Deterministic Tools Over Generative Code**  
+All data computation uses hardcoded Pandas functions (`tools.py`) injected as Gemini Function Declarations. The LLM is *only* used for semantic understanding and text generation — it never writes or executes code. This guarantees **100% traceable, hallucination-free metrics** in a corporate context.
+
+**2. Autonomous Insight Engine**  
+`insights_engine.py` runs without any LLM involvement. It uses IQR-based anomaly detection, Pearson correlations, and week-over-week growth math to surface findings. The AI only enters the picture to *narrate* what the engine found.
+
+**3. Multi-Tool Loop (Parallel Tool Calling)**  
+`bot.py` implements a full `while True` loop that collects and executes **all function calls in a single turn** before returning to the model. This handles compound analytical queries (e.g., "compare X and show trend of Y") in one round trip.
+
+**4. File-Relative Paths**  
+All `pathlib.Path(__file__).resolve()` references mean the backend runs correctly from any working directory — critical after reorganizing into the `backend/` package.
 
 ---
 
-## 🧠 Decisiones Técnicas y de Diseño
+## Tech Stack
 
-Durante el desarrollo e ideación, prioricé la **fiabilidad**, la **transparencia organizativa** y la **velocidad de iteración**:
-
-1. **Function Calling Nativo vs Data Agents Genéricos (PandasAI):** 
-   Elegí implementar *Function Calling* estructurado y restrictivo de Gemini por sobre bibliotecas donde la IA genera consultas "ad-hoc". En un entorno corporativo real, la seguridad y predecibilidad de usar reglas de negocio sólidas y *hardcodeadas* supera ampliamente la flexibilidad insegura de que un modelo escriba código arbitrario al vuelo.
-   
-2. **Insights Deterministas Completamente Explicables:** 
-   El motor que detecta y propone insights se apoya en operaciones matemáticas claras (Rango Intercuartilíco, correlaciones de Pearson predefinidas y *week-over-week growth*). Esto lo hace 100% transparente, reproducible y explicable para los equipos de operaciones y finanzas.
-   
-3. **Data Estructurada y Vectorizada en RAM:** 
-   Para los fines de este POC (Proof of Concept), más de 100k registros son manipulados de forma asíncrona pero eficiente en RAM a través del motor optimizado de Pandas (sin for-loops nativos en su procesamiento de series), garantizando latencias y tiempos de respuesta extremadamente competitivos.
-
----
-
-## 💸 Factibilidad Operacional y Costos Estimados
-
-El balanceo lógico de las responsabilidades, dejando el cómputo masivo local en Pandas y delegando tan solo la inferencia semántica a la API, permite un esquema de costos predecible y minúsculo usando los modelos ligeros de estado del arte (`Flash-Lite / Flash`):
-
-- **Query Simple:** ~$0.01 por turno analítico.
-- **Query Estructural Complejo:** ~$0.02 (involucrando múltiples extracciones y *tool calls* en cascada).
-- **Generación del Reporte Semanal Integral:** ~$0.05.
-- **Sesión Operativa Típica Continuada (~20 min):** Usualmente por debajo de $0.20 por usuario activo total.
+| Layer | Technology |
+|---|---|
+| **AI / LLM** | Google Gemini 2.5 Flash (`google-genai` SDK) |
+| **Backend API** | FastAPI + Uvicorn |
+| **Data Processing** | Pandas, NumPy |
+| **PDF Generation** | fpdf2, python-markdown |
+| **Chart Generation** | Matplotlib (headless `Agg` backend) |
+| **Frontend** | React 18 + Vite |
+| **Charts (UI)** | react-plotly.js |
+| **Markdown Rendering** | react-markdown |
 
 ---
 
-## 🚀 Limitaciones y Siguientes Pasos Evolutivos
+## Getting Started
 
-Si dispusiera de recursos adicionales de ingeniería y tiempo para expandir esta iniciativa iterativamente, priorizaría lo siguiente en el roadmap:
+### Prerequisites
+- Python 3.10+
+- Node.js 18+
+- A [Google AI Studio](https://aistudio.google.com) API key (free tier works)
 
-1. **Integración con Data Warehouses Corporativos:** Desacoplar `data_loader.py` de archivos estáticos y conectarlo eficientemente a repositorios de producción (AWS Redshift / Snowflake / BigQuery) utilizando conectores nativos y cachés en la nube.
-2. **Modelos Empíricos Avanzados:** Introducir un pipeline con Facebook Prophet o modelos ARIMA para no solo medir la caída en retención, sino también hacer un *forecasting* de volumetría y *churn rate* semanas antes de que suceda.
-3. **Despliegue y Autenticación Corporativa:** Empaquetar la aplicación en contenedores (Docker) y desplegarla en un entorno administrado (Streamlit Cloud o AWS ECS) habilitando SSO (Single Sign-On) estricto.
+### 1. Clone & install backend dependencies
+
+```bash
+git clone <repo-url>
+cd rappi-ai-system
+
+python -m venv venv
+source venv/bin/activate       # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### 2. Configure environment variables
+
+```bash
+cp .env.example .env
+# Open .env and set: GEMINI_API_KEY="your_key_here"
+```
+
+### 3. Start the backend
+
+```bash
+uvicorn backend.api:app --reload
+# → API running on http://127.0.0.1:8000
+```
+
+### 4. Start the frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+# → UI running on http://localhost:5173
+```
+
+---
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/chat` | Conversational query with session state |
+| `GET` | `/api/insights` | Pre-computed insights from the engine |
+| `POST` | `/api/report/generate` | Generate AI executive report (with charts) |
+| `GET` | `/api/report/md` | Download latest report as Markdown |
+| `GET` | `/api/report/pdf` | Download latest report as branded PDF |
+| `GET` | `/api/reports` | List all historical saved reports |
+| `GET` | `/api/reports/{filename}` | Load a historical report |
+| `GET` | `/api/reports/images/{filename}` | Serve generated chart images |
+
+---
+
+## Dataset Coverage
+
+- **9 Countries:** AR, BR, CL, CO, CR, EC, MX, PE, UY
+- **1,129 Zones** across all countries
+- **13 Metrics:** Perfect Orders, Defect Rate, Turbo Adoption, Gross Profit UE, Lead Penetration, TTR, and more
+- **Temporal granularity:** 9-week rolling windows (L0W to L8W)
+
+---
+
+## Cost Profile
+
+The architecture intentionally pushes heavy computation to Pandas (CPU, free), only delegating semantic understanding to the LLM:
+
+| Operation | Estimated Cost |
+|---|---|
+| Single analytical query | ~$0.01 |
+| Complex multi-metric query | ~$0.02 |
+| Full executive report generation | ~$0.05 |
+| Typical 20-minute ops session | < $0.20 |
+
+---
+
+## Roadmap
+
+1. **Production Data Integration** — Replace static Excel with Redshift / BigQuery connectors
+2. **Forecasting** — Add Facebook Prophet for predictive weekly metric modeling
+3. **User Authentication** — SSO integration for multi-user corporate deployment
+4. **Containerization** — Docker + CI/CD pipeline for cloud deployment (AWS ECS / GCP Cloud Run)
+5. **Alert System** — Automated Slack/email notifications when the insight engine detects critical anomalies

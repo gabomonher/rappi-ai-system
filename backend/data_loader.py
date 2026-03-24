@@ -12,6 +12,10 @@ Hallazgos del EDA que justifican cada paso:
 """
 
 import pandas as pd
+from pathlib import Path
+
+# Root of the project (one level up from this file — works from any directory)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # ---------------------------------------------------------------------------
 # Constantes exportadas — usadas también por tools.py, insights_engine.py
@@ -35,18 +39,14 @@ _ORDERS_RENAME = {
 # Función principal
 # ---------------------------------------------------------------------------
 
-def load_data(file_path: str = "data/rappi_data.xlsx") -> tuple:
+def load_data(file_path: str | None = None) -> tuple:
     """
     Carga y limpia RAW_INPUT_METRICS y RAW_ORDERS del Excel de Rappi.
-
-    Returns
-    -------
-    (df_metrics, df_orders, df_long)
-        df_metrics : RAW_INPUT_METRICS limpio (post-dedup + clip Lead Penetration)
-        df_orders  : RAW_ORDERS con esquema _ROLL, sin zonas fantasma
-                     ⚠️ Mantiene zonas sin L0W_ROLL (historial útil)
-        df_long    : melt de df_metrics, filas con value=NaN eliminadas
+    Si file_path no se indica, busca data/rappi_data.xlsx relativo al proyecto.
+    ...
     """
+    if file_path is None:
+        file_path = str(_PROJECT_ROOT / "data" / "rappi_data.xlsx")
 
     # ══════════════════════════════════════════════════════════
     # BLOQUE A — df_metrics (RAW_INPUT_METRICS)

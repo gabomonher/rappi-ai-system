@@ -17,11 +17,11 @@ from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 
-from tools import (
+from .tools import (
     top_zones, compare_segments, trend_analysis,
     find_zones, aggregate_by, explain_growth, safe_result,
 )
-from context import SYSTEM_PROMPT
+from .data_context import SYSTEM_PROMPT
 
 load_dotenv()
 

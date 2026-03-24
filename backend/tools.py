@@ -9,7 +9,7 @@ Accede a los DataFrames mediante el singleton DataContext:
 
 import difflib
 import pandas as pd
-from data_context import get_context
+from .data_context import get_context
 
 # ---------------------------------------------------------------------------
 # CONSTANTES

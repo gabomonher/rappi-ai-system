@@ -1,0 +1,175 @@
+.insights-container {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 40px;
+  height: 100%;
+  overflow-y: auto;
+  padding-right: 12px;
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 50vh;
+  color: var(--accent);
+  font-weight: 500;
+  font-size: 16px;
+  gap: 16px;
+  animation: fadeIn 1s ease;
+}
+
+/* ── Metrics Stat Boxes ── */
+.stat-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 32px;
+}
+.stat-box {
+  flex: 1;
+  background: var(--bg-card);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  text-align: center;
+  transition: border-color 0.3s, background 0.3s;
+  position: relative;
+  overflow: hidden;
+}
+.stat-box::before {
+  content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
+  background: radial-gradient(circle, rgba(255,255,255,0.03) 0%, transparent 60%);
+  opacity: 0; transition: opacity 0.5s; pointer-events: none;
+}
+.stat-box:hover::before { opacity: 1; }
+.stat-box:hover {
+  border-color: var(--border-subtle);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.stat-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 40px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 8px;
+  line-height: 1;
+}
+.text-accent {
+  color: var(--accent) !important;
+}
+.stat-label {
+  font-size: 12px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  font-weight: 600;
+}
+
+/* ── Bento Grid & Cards ── */
+.bento-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  animation: fadeIn 0.6s ease forwards;
+}
+
+.bento-card {
+  background: var(--bg-card);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  transition: border-color 0.3s, background 0.3s;
+  display: flex;
+  flex-direction: column;
+}
+.bento-card:hover {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: var(--border-subtle);
+}
+
+.bento-card-critical { 
+  border-top: 3px solid var(--accent); 
+  background: linear-gradient(180deg, rgba(250, 61, 34, 0.05) 0%, var(--bg-card) 100%);
+}
+.bento-card-info { border-top: 3px solid #38bdf8; }
+.bento-card-success { border-top: 3px solid #4ade80; }
+
+.card-type {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-bottom: 12px;
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(0,0,0,0.3);
+}
+.card-type-critical { color: var(--accent); }
+.card-type-info { color: #38bdf8; }
+.card-type-success { color: #4ade80; }
+
+.card-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+.card-meta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-3);
+  margin-bottom: 16px;
+}
+.card-desc {
+  font-size: 14px;
+  color: var(--text-2);
+  line-height: 1.6;
+  margin-top: auto;
+}
+
+/* ── Report Section ── */
+.w-full { width: 100%; margin-top: 16px; }
+
+.report-box {
+  background: var(--bg-card);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 32px;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text-2);
+  animation: slideUp 0.5s ease;
+}
+.report-box h1 { font-size: 24px; color: #fff; margin-bottom: 20px; border-bottom: 2px solid var(--accent); padding-bottom: 12px; display: inline-block; }
+.report-box h2 { font-size: 18px; color: #fff; margin-top: 32px; margin-bottom: 16px; }
+.report-box h3 { font-size: 16px; margin-top: 24px; margin-bottom: 12px; font-weight: 700; color: #fff; }
+.report-box p { margin-bottom: 16px; }
+.report-box blockquote {
+  border-left: 4px solid var(--accent);
+  padding-left: 16px;
+  background: var(--accent-soft);
+  color: #fff;
+  font-style: italic;
+  margin: 20px 0;
+  padding: 16px;
+  border-radius: 0 8px 8px 0;
+}
+.report-box li { margin-bottom: 8px; }
+
+.report-actions {
+  display: flex;
+  gap: 16px;
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+.report-actions button {
+  flex: 1;
+}
