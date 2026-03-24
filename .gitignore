@@ -33,11 +33,6 @@ env/
 .DS_Store
 Thumbs.db
 
-# Data (el Excel es grande, no subir al repo)
-data/
-
 # Reportes generados
 reporte_insights.md
 
-# EDA (script temporal, no producción)
-eda.py

@@ -18,7 +18,7 @@ from fpdf import FPDF
 load_dotenv()
 
 # Igual que en bot.py, usamos flash-lite/flash para dev, luego se puede subir a pro
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-2.5-flash-lite"
 
 def format_findings_for_llm(findings: list[dict]) -> str:
     """Convierte la lista de diccionarios a un formato de texto estructurado para el prompt."""
